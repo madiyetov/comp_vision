@@ -4,8 +4,10 @@
 #include <ctype.h>
 #include <math.h> // from terminal add "-lm": gcc main.c -lm
 
+enum { WORD_LEN = 25 };
+
 struct word {
-    char word [25];
+    char word [WORD_LEN];
     int count;
     int where_exists;
     double importance;
@@ -13,27 +15,30 @@ struct word {
 
 int scanner (FILE *file, char *buff)
 {
-    char *word;
-    word = (char *) malloc(25*sizeof(char));
     int i=0, c;
+    char *word = (char *) malloc(WORD_LEN*sizeof(char));
 
     while (1) {
 
         c = fgetc(file);
 
         if( feof(file) && i == 0) {
+            free(word);
             return 0;
-        } else if ( feof(file) ) {
-            break;
-        } else if ( ispunct(c) || isspace(c) ) {
+
+        } else if ( feof(file) || ispunct(c) || isspace(c) ) {
             if ( i != 0 ) break;
             else continue;
+
         } else {
             word[i++] = c;
+            word[i] = '\0';
         }
     }
 
     strcpy(buff, word);
+    free(word);
+
     return 1;
 }
 
@@ -54,7 +59,7 @@ void calculate_weighting (struct word *words_array,
     int  i;
     double tf, idf, where_exists, normalizer = 0.0;
 
-    // Find tf and idf, miltiple them
+    // For every word find tf and idf, miltiple them
     for ( i=0; i<uniq_word_counter; i++) {
 
         tf = (double) words_array[i].count/all_word_counter;
@@ -68,7 +73,6 @@ void calculate_weighting (struct word *words_array,
     for ( i=0; i<uniq_word_counter; i++) {
         normalizer += pow(words_array[i].importance, 2);
     }
-
     normalizer = sqrt(normalizer);
 
     // Find importance
@@ -79,10 +83,8 @@ void calculate_weighting (struct word *words_array,
 
 void initialize (struct word *words_array, int i, char *buff)
 {
+    words_array[i].where_exists = words_array[i].count = 1;
     strcpy(words_array[i].word, buff);
-    words_array[i].where_exists = 1;
-    words_array[i].count = 1;
-    words_array[i].importance = 0;
 }
 
 void check_another_files (struct word *words_array,
@@ -91,7 +93,7 @@ void check_another_files (struct word *words_array,
                           int uniq_word_counter)
 {
     int i=0;
-    char buff [25];
+    char buff [WORD_LEN];
 
     for (i=0; i<SOURCES_AMOUNT-1; i++) {
 
@@ -101,10 +103,12 @@ void check_another_files (struct word *words_array,
                 words_array[uniq_word_counter].where_exists++;
                 break;
             }
+
         }
 
         rewind(other_files[i]);
     }
+
 }
 
 void insertion_sort (struct word *words_array, int uniq_word_counter)
@@ -143,35 +147,42 @@ int main(int argc, char *argv[])
 {
     if ( argc >= 3 ) {
 
-        int i, uniq_word_counter = 0, all_word_counter = 0;
-        char buff [25];
-        //buff = (char *) malloc(25*sizeof(char));
-        struct word words_array [1000];
         const int SOURCES_AMOUNT = argc-1;
+        int i, uniq_word_counter = 0, all_word_counter = 0, ALLOWED_ELEM = 256;
+        char buff [WORD_LEN];
+        struct word *words_array = (struct word *) malloc(ALLOWED_ELEM*sizeof(struct word));
         FILE *main_file, *other_files [SOURCES_AMOUNT-1];
 
 
-        // Open the files
+        // Open files
         main_file = fopen(argv[1], "r");
 
         for (i=2; i<=SOURCES_AMOUNT; i++) {
             other_files[i-2] = fopen(argv[i], "r");
         }
 
-
         // Parse the main document
         while ( scanner(main_file, buff) != 0 ) {
 
-            int existing_word_index = find_word (buff, words_array, uniq_word_counter);
+            int existing_word_index = find_word (buff, words_array, uniq_word_counter); // Search word in the words array
 
-            if ( existing_word_index == -1 ) {
+            if ( existing_word_index == -1 ) {          // If there is no this word then
 
+                // Add this word
                 initialize (words_array, uniq_word_counter, buff);
+
+                // Check other files for this word
                 check_another_files (words_array, SOURCES_AMOUNT, other_files, uniq_word_counter);
+
                 uniq_word_counter++;
 
-            } else {
-                words_array[existing_word_index].count++;
+            } else {                                   // If there is this word then
+                words_array[existing_word_index].count++;  // Increment the amount of this word
+            }
+
+            if (uniq_word_counter == ALLOWED_ELEM) {
+                ALLOWED_ELEM = ALLOWED_ELEM+256;
+                words_array = (struct word *) realloc(words_array,ALLOWED_ELEM*sizeof(struct word));
             }
 
             all_word_counter++;
@@ -195,6 +206,8 @@ int main(int argc, char *argv[])
         printf("\n == START == \n\n");
         show(words_array, uniq_word_counter);
         printf("\n == END == \n");
+
+        free(words_array);
 
     } else {
         printf("At least two files expected.\n");
